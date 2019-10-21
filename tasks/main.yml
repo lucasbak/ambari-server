@@ -1,0 +1,73 @@
+---
+- name: Install ambari
+  yum: name={{item}} state=installed
+  with_items:
+    - ambari-server
+    - ambari-agent
+    - mysql-connector-java
+    - wget
+    - mysql
+    - MySQL-python
+
+- name: Check if the database exists
+  shell: mysql -h {{ mysql_server_hostname }} -u {{ ambari_database_user }} -p'{{ ambari_database_user_password }}' -e 'USE {{ ambari_database }}; SHOW TABLES;'
+  register: checkdbambari
+  ignore_errors: yes
+
+
+- name: Import ambari database
+  mysql_db:
+    state: import
+    name: '{{ ambari_database }}'
+    login_host: '{{ mysql_server_hostname }}'
+    login_user: "{{ ambari_database_user }}"
+    login_password: "{{ ambari_database_user_password }}"
+    target: /var/lib/ambari-server/resources/Ambari-DDL-MySQL-CREATE.sql
+  ignore_errors: True
+  when: checkdbambari.stdout.find("stack") == -1
+
+
+- name: Ambari-server - Setup
+  shell: 'ambari-server setup --silent --database=mysql --databasename={{ ambari_database }} --databaseusername={{ ambari_database_user }} --databasepassword={{ ambari_database_user_password }} --databasehost={{ mysql_server_hostname }} --databaseport={{ mysql_server_port }} --java-home={{java_home}}'
+- name: Ambari-server - Encrypt password
+  shell: 'ambari-server setup --silent --jdbc-db=mysql --jdbc-driver=/usr/share/java/mysql-connector-java.jar && ambari-server setup-security --security-option=encrypt-passwords --master-key={{ ambari_master_key }} --master-key-persist=true'
+- name: Ambari-server - SSL
+  shell: 'ambari-server setup-security --security-option=setup-https --api-ssl=true --api-ssl-port={{ ambari_ssl_port }} --pem-password= --import-cert-path="{{ ssl_cert_folder }}/{{ inventory_hostname }}.cert.pem" --import-key-path="{{ ssl_cert_folder }}/{{ inventory_hostname }}.key.pem"'
+  when: ambari_ssl == True
+- name: Ambari-server - SSL
+  shell: 'ambari-server setup-security --security-option=setup-truststore --truststore-path={{ ssl_stores_path }}/truststore.jks --truststore-type=jks --truststore-password={{ truststore_password }} --truststore-reconfigure'
+  when: ambari_ssl == True
+- name: Copy systemd service for ambari-server
+  template:
+    src: ambari-server.service
+    dest: /lib/systemd/system/ambari-server.service
+- name: Systemd reload
+  systemd: daemon_reload=yes
+- name: Disable chkconfig
+  command: chkconfig ambari-server off
+
+- name: run as custom user
+  shell: "echo 'ambari-server.user=ambari' >> /etc/ambari-server/conf/ambari.properties"
+  when: run_as_non_root_user is defined
+- name: fix env custom user
+  shell: chmod +x /var/lib/ambari-server/ambari-env.sh
+  when: run_as_non_root_user is defined
+- name : change ownership
+  shell: chown -R ambari /var/lib/ambari-server
+  when: run_as_non_root_user is defined
+- name : change ownership
+  shell: chown -R ambari /var/log/ambari-server
+  when: run_as_non_root_user is defined
+- name : change ownership
+  shell: chown -R ambari /etc/ambari-server
+  when: run_as_non_root_user is defined  
+- name: Enable service Ambari-server
+  systemd:
+    enabled: yes
+    masked: no
+    name: ambari-server.service
+    
+- name: Restart service Ambari-server
+  systemd:
+    state: restarted
+    name: ambari-server
