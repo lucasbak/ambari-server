@@ -3,7 +3,7 @@ ambari_database_user: ambari_db_user
 ambari_database_user_password: ambari_db_password
 ambari_ssl: True
 ambari_ssl_port: 8442
-mysql_server_hostname: master1.habibiz
+mysql_server_hostname: master01.clemlab.com
 mysql_server_port: 3306
 ambari_master_key: masterkey
 ssl_cert_folder: /etc/ssl/

@@ -1,50 +1,207 @@
 ---
-- name: Install ambari
-  yum: name={{item}} state=installed
-  with_items:
+- name: Copy Repo [APT]
+  copy:
+    src: "{{ item }}"
+    dest: /etc/apt/sources.list.d/
+  when: offline_apt_repos is defined and offline_apt_repos
+  with_fileglob:
+    - "{{source_repo_folder}}/*.list"
+
+- name: update apt cache
+  shell: 'apt update -y'
+  when: offline_apt_repos is defined and offline_apt_repos
+
+- name: Copy Repo [YUM]
+  copy:
+    src: "{{ item }}"
+    dest: /etc/yum.repos.d/
+  when: offline_yum_repos is defined and offline_yum_repos
+  with_fileglob:
+    - "{{source_repo_folder}}/*.repo"
+  when: offline_yum_repos is defined and offline_yum_repos
+
+
+- set_fact:
+    ambari_db_options: "--database={{ ambari_database_type }} \
+                        --databasehost={{ ambari_database_server_hostname }} \
+                        --databaseport={{ ambari_database_server_port }} \
+                        --databasename={{ ambari_database }} \
+                        --databaseusername={{ ambari_database_user }} --databasepassword={{ ambari_database_user_password }}"
+
+- name: "ROLE[ambari-server] - Action[setup] - postgresql connector path"
+  debug:
+    msg: "{{ambari_jdbc_postgres_driver_path}}"
+
+- name: "ROLE[ambari-server] - ACTION[setup] - Vérification des conditions" 
+  fail: msg="les variables mysql_jdbc_deb et mysql_jdbc_rp, ne peuvent pas être définis en même temps"
+  when: "mysql_jdbc_rpm is defined and mysql_jdbc_deb is defined"
+
+- name: "ROLE[ambari-server] - ACTION[setup] - Packages [redhat7]"
+  package:
+    state: present
+    name: "{{item}}"
+    use: yum
+  with_items: 
     - ambari-server
     - ambari-agent
     - mysql-connector-java
     - wget
     - mysql
     - MySQL-python
+  when: (ansible_distribution == "CentOS" or ansible_distribution == "Rocky" or ansible_distribution == "RedHat") and ansible_distribution_major_version < '8'
 
-- name: Check if the database exists
-  shell: mysql -h {{ mysql_server_hostname }} -u {{ ambari_database_user }} -p'{{ ambari_database_user_password }}' -e 'USE {{ ambari_database }}; SHOW TABLES;'
+- name: "ROLE[ambari-server] - ACTION[setup] - Packages [ubuntu22]"
+  package:
+    state: present
+    name: "{{item}}"
+    use: apt
+  with_items: 
+    - python3-pymysql
+    - ambari-server
+    - ambari-agent
+    - wget
+    - libmysqlclient21
+    - libmariadb3
+    - mysql-client
+  when: (ansible_distribution == "Ubuntu")
+
+
+- name: "ROLE[ambari-server] - ACTION[setup] - Packages [redhat8]"
+  package:
+    state: present
+    name: "{{item}}"
+    use: dnf
+  with_items: 
+    - ambari-server
+    - ambari-agent
+    - python2-PyMySQL
+    - python3-PyMySQL
+    - wget
+    - mysql
+  when: (ansible_distribution == "CentOS" or ansible_distribution == "Rocky" or ansible_distribution == "RedHat" or ansible_distribution == "AlmaLinux" or ansible_distribution == "RedHat") and ansible_distribution_major_version >= '8'
+
+
+- name: "ROLE[ambari-server] - ACTION[setup] - Vérification de l'existence de la DB [mysql]"
+  shell: mysql -h {{ ambari_database_server_hostname }} -u {{ ambari_database_user }} -p'{{ ambari_database_user_password }}' -e 'USE {{ ambari_database }}; SHOW TABLES;'
   register: checkdbambari
   ignore_errors: yes
+  when: ambari_database_type == 'mysql'
 
+- name: "ROLE[ambari-server] - ACTION[setup] - Import de la DB Ambari [postgres]"
+  postgresql_db:
+    login_host: "{{ ambari_database_server_hostname }}"
+    port: "{{ ambari_database_server_port }}"
+    name: "{{ ambari_database }}"
+    maintenance_db: "{{ ambari_database }}"
+    login_user: "{{ ambari_database_user }}"
+    login_password: "{{ ambari_database_user_password }}"
+    state: restore
+    target: /var/lib/ambari-server/resources/Ambari-DDL-Postgres-CREATE.sql
+  when: ambari_database_type == 'postgres'
 
-- name: Import ambari database
+- name: "ROLE[ambari-server] - ACTION[setup] - Import de la DB Ambari [mysql]"
   mysql_db:
     state: import
     name: '{{ ambari_database }}'
-    login_host: '{{ mysql_server_hostname }}'
+    login_host: '{{ ambari_database_server_hostname }}'
     login_user: "{{ ambari_database_user }}"
     login_password: "{{ ambari_database_user_password }}"
     target: /var/lib/ambari-server/resources/Ambari-DDL-MySQL-CREATE.sql
   ignore_errors: True
-  when: checkdbambari.stdout.find("stack") == -1
+  when: checkdbambari.stdout.find("stack") == -1 and ambari_database_type == 'mysql'
+
+- name: "Check if path exists Mysql Connector - (RHEL)"
+  stat:
+    path: "/usr/share/java/mysql-connector-j.jar"
+  register: mjdbcexists
+  when: mysql_jdbc_rpm is defined
 
 
-- name: Ambari-server - Setup
-  shell: 'ambari-server setup --silent --database=mysql --databasename={{ ambari_database }} --databaseusername={{ ambari_database_user }} --databasepassword={{ ambari_database_user_password }} --databasehost={{ mysql_server_hostname }} --databaseport={{ mysql_server_port }} --java-home={{java_home}}'
-- name: Ambari-server - Encrypt password
+- name: "Check if path exists Mysql Connector - (APT)"
+  stat:
+    path: "/usr/share/java/mysql-connector-j.jar"
+  register: mjdbcexists
+  when: mysql_jdbc_deb is defined
+
+
+- name: Copy MariaDB mysql java connector (RHEL)
+  copy:
+    src: "files/{{mysql_jdbc_rpm}}"
+    dest: /tmp/mysql_jdbc_rpm.rpm
+  when: mysql_jdbc_rpm is defined
+
+- name: Copy MariaDB mysql java connector (APT)
+  copy:
+    src: "files/{{mysql_jdbc_deb}}"
+    dest: /tmp/mysql_jdbc_deb.deb
+  when: mysql_jdbc_deb is defined
+
+- shell:
+    cmd: rpm -i /tmp/mysql_jdbc_rpm.rpm
+  when: mysql_jdbc_rpm is defined
+  ignore_errors: True
+
+- shell:
+    cmd: dpkg -i /tmp/mysql_jdbc_deb.deb
+  when: mysql_jdbc_deb is defined
+
+
+- name: configure ambari server properties (RHEL)
+  shell: "echo 'server.jdbc.driver.path=/usr/share/java/mysql-connector-j.jar' >> /etc/ambari-server/conf/ambari.properties"
+  when: mysql_jdbc_rpm is defined
+
+- name: configure ambari server properties (APT)
+  shell: "echo 'server.jdbc.driver.path=/usr/share/java/mysql-connector-j-8.1.0.jar' >> /etc/ambari-server/conf/ambari.properties"
+  when: mysql_jdbc_deb is defined
+
+
+- set_fact:
+    ambari_java_options: "--java-home={{java_home}}"
+
+- name: "ROLE[ambari-server] - ACTION[setup] - Lancement de l'installation"
+  shell: /usr/sbin/ambari-server setup --silent {{ ambari_java_options | default("") }} {{ ambari_db_options | default("") }}
+
+- name: "ROLE[ambari-server] - ACTION[setup] - Encrypt password (RHEL7)"
   shell: 'ambari-server setup --silent --jdbc-db=mysql --jdbc-driver=/usr/share/java/mysql-connector-java.jar && ambari-server setup-security --security-option=encrypt-passwords --master-key={{ ambari_master_key }} --master-key-persist=true'
-- name: Ambari-server - SSL
+  when: (mysql_jdbc_rpm is not defined) and  (mysql_jdbc_deb is not defined) and (ambari_database_type == "mysql" )
+
+- name: "ROLE[ambari-server] - ACTION[setup] - Encrypt password (RHEL8)"
+  shell: 'ambari-server setup --silent --jdbc-db=mysql --jdbc-driver=/usr/share/java/mysql-connector-j.jar && ambari-server setup-security --security-option=encrypt-passwords --master-key={{ ambari_master_key }} --master-key-persist=true'
+  when: (mysql_jdbc_rpm is defined) and  (mysql_jdbc_deb is not defined) and (ambari_database_type == "mysql" )
+
+- name:  "ROLE[ambari-server] - ACTION[setup] - Encrypt password (APT-mysql)"
+  shell: 'ambari-server setup --silent --jdbc-db=mysql --jdbc-driver=/usr/share/java/mysql-connector-j-8.1.0.jar && ambari-server setup-security --security-option=encrypt-passwords --master-key={{ ambari_master_key }} --master-key-persist=true'
+  when: (mysql_jdbc_rpm is not defined) and  (mysql_jdbc_deb is defined) and (ambari_database_type == "mysql" )
+
+- name:  "ROLE[ambari-server] - ACTION[setup] - Encrypt password (APT-postgres)"
+  shell: 'ambari-server setup --silent --jdbc-db=postgres --jdbc-driver={{ambari_jdbc_postgres_driver_path}} && ambari-server setup-security --security-option=encrypt-passwords --master-key={{ ambari_master_key }} --master-key-persist=true'
+  when: ambari_database_type == "postgres"
+
+
+- name:  "ROLE[ambari-server] - ACTION[setup] - SSL - KEYSTORE"
   shell: 'ambari-server setup-security --security-option=setup-https --api-ssl=true --api-ssl-port={{ ambari_ssl_port }} --pem-password= --import-cert-path="{{ ssl_cert_folder }}/{{ inventory_hostname }}.cert.pem" --import-key-path="{{ ssl_cert_folder }}/{{ inventory_hostname }}.key.pem"'
   when: ambari_ssl == True
-- name: Ambari-server - SSL
+
+- name: "ROLE[ambari-server] - ACTION[setup] - SSL - TRUSTSTORE"
   shell: 'ambari-server setup-security --security-option=setup-truststore --truststore-path={{ ssl_stores_path }}/truststore.jks --truststore-type=jks --truststore-password={{ truststore_password }} --truststore-reconfigure'
   when: ambari_ssl == True
+
+- name: "ROLE[ambari-server] - ACTION[setup] -jdbc-driver"
+  shell: 'ambari-server setup --jdbc-db=postgres --jdbc-driver={{ambari_jdbc_postgres_driver_path}} '
+  when: ambari_database_type == 'postgres'
+
+
 - name: Copy systemd service for ambari-server
   template:
     src: ambari-server.service
     dest: /lib/systemd/system/ambari-server.service
+  when: ansible_distribution != "Ubuntu"
 - name: Systemd reload
   systemd: daemon_reload=yes
+
 - name: Disable chkconfig
   command: chkconfig ambari-server off
+  when: ansible_distribution != "Ubuntu"
 
 - name: run as custom user
   shell: "echo 'ambari-server.user=ambari' >> /etc/ambari-server/conf/ambari.properties"
@@ -71,3 +228,7 @@
   systemd:
     state: restarted
     name: ambari-server
+
+- name: "ROLE[ambari-server] - ACTION[setup] -jdbc-driver"
+  shell: 'ambari-server setup --jdbc-db=postgres --jdbc-driver={{ambari_jdbc_postgres_driver_path}} '
+  when: ambari_database_type == 'postgres'
