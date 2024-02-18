@@ -15,11 +15,15 @@
   copy:
     src: "{{ item }}"
     dest: /etc/yum.repos.d/
-  when: offline_yum_repos is defined and offline_yum_repos
   with_fileglob:
     - "{{source_repo_folder}}/*.repo"
   when: offline_yum_repos is defined and offline_yum_repos
 
+- name: Import GPG key
+  rpm_key:
+    state: present
+    key: "{{rpm_key}}"
+  when: rpm_key is defined
 
 - set_fact:
     ambari_db_options: "--database={{ ambari_database_type }} \
@@ -78,7 +82,21 @@
     - python3-PyMySQL
     - wget
     - mysql
-  when: (ansible_distribution == "CentOS" or ansible_distribution == "Rocky" or ansible_distribution == "RedHat" or ansible_distribution == "AlmaLinux" or ansible_distribution == "RedHat") and ansible_distribution_major_version >= '8'
+  when: (ansible_distribution == "CentOS" or ansible_distribution == "Rocky" or ansible_distribution == "RedHat" or ansible_distribution == "AlmaLinux" or ansible_distribution == "RedHat") and ansible_distribution_major_version == '8'
+
+
+- name: "ROLE[ambari-server] - ACTION[setup] - Packages [redhat9]"
+  package:
+    state: present
+    name: "{{item}}"
+    use: dnf
+  with_items: 
+    - ambari-server
+    - ambari-agent
+    - python3-PyMySQL
+    - wget
+    - mysql
+  when: (ansible_distribution == "CentOS" or ansible_distribution == "Rocky" or ansible_distribution == "RedHat" or ansible_distribution == "AlmaLinux" or ansible_distribution == "RedHat") and ansible_distribution_major_version == '9'
 
 
 - name: "ROLE[ambari-server] - ACTION[setup] - Vérification de l'existence de la DB [mysql]"
@@ -196,12 +214,13 @@
     src: ambari-server.service
     dest: /lib/systemd/system/ambari-server.service
   when: ansible_distribution != "Ubuntu"
+
 - name: Systemd reload
   systemd: daemon_reload=yes
 
 - name: Disable chkconfig
   command: chkconfig ambari-server off
-  when: ansible_distribution != "Ubuntu"
+  when: ansible_distribution != "Ubuntu" and ansible_distribution_major_version < '9'
 
 - name: run as custom user
   shell: "echo 'ambari-server.user=ambari' >> /etc/ambari-server/conf/ambari.properties"
@@ -232,3 +251,7 @@
 - name: "ROLE[ambari-server] - ACTION[setup] -jdbc-driver"
   shell: 'ambari-server setup --jdbc-db=postgres --jdbc-driver={{ambari_jdbc_postgres_driver_path}} '
   when: ambari_database_type == 'postgres'
+
+- name: "ROLE[ambari-server] - ACTION[setup] -jdbc-driver"
+  shell: 'ambari-server setup --jdbc-db=mysql --jdbc-driver={{ambari_jdbc_mysql_driver_path}} '
+  when: ambari_database_type == 'mysql' or services_need_mysql_jdbc

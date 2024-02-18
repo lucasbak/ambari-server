@@ -4,7 +4,7 @@
   [Service]
   Type=forking
   ExecStartPre=/bin/sleep 30
-  ExecStart=/etc/rc.d/init.d/ambari-server start
-  ExecStop=/etc/rc.d/init.d/ambari-server stop
+  ExecStart=/usr/sbin/ambari-server start
+  ExecStop=/usr/sbin/ambari-server stop
   [Install]
   WantedBy=multi-user.target
