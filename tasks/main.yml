@@ -52,6 +52,8 @@
     - wget
     - mysql
     - MySQL-python
+    - postgresql-server
+    - postgresql
   when: (ansible_distribution == "CentOS" or ansible_distribution == "Rocky" or ansible_distribution == "RedHat") and ansible_distribution_major_version < '8'
 
 - name: "ROLE[ambari-server] - ACTION[setup] - Packages [ubuntu22]"
@@ -67,6 +69,8 @@
     - libmysqlclient21
     - libmariadb3
     - mysql-client
+    - postgresql-server
+    - postgresql
   when: (ansible_distribution == "Ubuntu")
 
 
@@ -83,6 +87,7 @@
     - wget
     - mysql
     - postgresql-server
+    - postgresql
   when: (ansible_distribution == "CentOS" or ansible_distribution == "Rocky" or ansible_distribution == "RedHat" or ansible_distribution == "AlmaLinux" or ansible_distribution == "RedHat") and ansible_distribution_major_version == '8'
 
 
