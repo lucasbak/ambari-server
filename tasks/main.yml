@@ -69,7 +69,6 @@
     - libmysqlclient21
     - libmariadb3
     - mysql-client
-    - postgresql-server
     - postgresql
   when: (ansible_distribution == "Ubuntu")
 
