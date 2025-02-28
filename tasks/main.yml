@@ -230,30 +230,43 @@
   when: ansible_distribution != "Ubuntu" and ansible_distribution_major_version < '9'
 
 - name: run as custom user
-  shell: "echo 'ambari-server.user=ambari' >> /etc/ambari-server/conf/ambari.properties"
+  shell: "echo 'ambari-server.user={{run_as_non_root_user}}' >> /etc/ambari-server/conf/ambari.properties"
   when: run_as_non_root_user is defined
 - name: fix env custom user
   shell: chmod +x /var/lib/ambari-server/ambari-env.sh
   when: run_as_non_root_user is defined
 - name : change ownership
-  shell: chown -R ambari /var/lib/ambari-server
+  shell: "chown -R {{run_as_non_root_user}} /var/lib/ambari-server"
   when: run_as_non_root_user is defined
 - name : change ownership
-  shell: chown -R ambari /var/log/ambari-server
+  shell: "chown -R {{run_as_non_root_user}} /var/log/ambari-server"
   when: run_as_non_root_user is defined
 - name : change ownership
-  shell: chown -R ambari /etc/ambari-server
-  when: run_as_non_root_user is defined  
+  shell: "chown -R {{run_as_non_root_user}} /etc/ambari-server"
+  when: run_as_non_root_user is defined
+
 - name: Enable service Ambari-server
   systemd:
     enabled: yes
     masked: no
     name: ambari-server.service
-    
-- name: Restart service Ambari-server
-  systemd:
-    state: restarted
-    name: ambari-server
+
+- name: change ownership of /var/run/ambari-server
+  shell: "chown -R {{run_as_non_root_user}} /var/run/ambari-server"
+  when: run_as_non_root_user is defined
+
+- name: Check if Ambari-server is running
+  command: ambari-server status
+  register: ambari_server_status
+  ignore_errors: true
+
+- name: Restart Ambari-server if running
+  command: ambari-server restart
+  when: ambari_server_status.rc == 0
+
+- name: Start Ambari-server if not running
+  command: ambari-server start
+  when: ambari_server_status.rc != 0
 
 - name: "ROLE[ambari-server] - ACTION[setup] -jdbc-driver"
   shell: 'ambari-server setup --jdbc-db=postgres --jdbc-driver={{ambari_jdbc_postgres_driver_path}} '
