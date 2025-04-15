@@ -181,10 +181,15 @@
 
 
 - set_fact:
-    ambari_java_options: "--java-home={{java_home}}"
+    ambari_java_options: "--java-home={{ java_home }}"
+    ambari_java_home_options: "--ambari-java-home={{ ambari_java_home }}"
+
+- set_fact:
+    ambari_java_home_options: "--ambari-java-home={{ ambari_java_home }}"
+  when: ambari_java_home is defined
 
 - name: "ROLE[ambari-server] - ACTION[setup] - Lancement de l'installation"
-  shell: /usr/sbin/ambari-server setup --silent {{ ambari_java_options | default("") }} {{ ambari_db_options | default("") }}
+  shell: /usr/sbin/ambari-server setup --silent {{ ambari_java_options | default("") }} {{ ambari_java_home_options  }} {{ ambari_db_options | default("") }}
 
 - name: "ROLE[ambari-server] - ACTION[setup] - Encrypt password (RHEL7)"
   shell: 'ambari-server setup --silent --jdbc-db=mysql --jdbc-driver=/usr/share/java/mysql-connector-java.jar && ambari-server setup-security --security-option=encrypt-passwords --master-key={{ ambari_master_key }} --master-key-persist=true'
@@ -215,7 +220,6 @@
   shell: 'ambari-server setup --jdbc-db=postgres --jdbc-driver={{ambari_jdbc_postgres_driver_path}} '
   when: ambari_database_type == 'postgres'
 
-
 - name: Copy systemd service for ambari-server
   template:
     src: ambari-server.service
@@ -230,19 +234,23 @@
   when: ansible_distribution != "Ubuntu" and ansible_distribution_major_version < '9'
 
 - name: run as custom user
-  shell: "echo 'ambari-server.user={{run_as_non_root_user}}' >> /etc/ambari-server/conf/ambari.properties"
+  shell: "echo 'ambari-server.user=hadoop' >> /etc/ambari-server/conf/ambari.properties"
   when: run_as_non_root_user is defined
+
 - name: fix env custom user
   shell: chmod +x /var/lib/ambari-server/ambari-env.sh
   when: run_as_non_root_user is defined
+
 - name : change ownership
-  shell: "chown -R {{run_as_non_root_user}} /var/lib/ambari-server"
+  shell: chown -R hadoop /var/lib/ambari-server
   when: run_as_non_root_user is defined
+
 - name : change ownership
-  shell: "chown -R {{run_as_non_root_user}} /var/log/ambari-server"
+  shell: chown -R hadoop /var/log/ambari-server
   when: run_as_non_root_user is defined
+
 - name : change ownership
-  shell: "chown -R {{run_as_non_root_user}} /etc/ambari-server"
+  shell: chown -R hadoop /etc/ambari-server
   when: run_as_non_root_user is defined
 
 - name: Enable service Ambari-server
@@ -250,23 +258,11 @@
     enabled: yes
     masked: no
     name: ambari-server.service
-
-- name: change ownership of /var/run/ambari-server
-  shell: "chown -R {{run_as_non_root_user}} /var/run/ambari-server"
-  when: run_as_non_root_user is defined
-
-- name: Check if Ambari-server is running
-  command: ambari-server status
-  register: ambari_server_status
-  ignore_errors: true
-
-- name: Restart Ambari-server if running
-  command: ambari-server restart
-  when: ambari_server_status.rc == 0
-
-- name: Start Ambari-server if not running
-  command: ambari-server start
-  when: ambari_server_status.rc != 0
+    
+- name: Restart service Ambari-server
+  systemd:
+    state: restarted
+    name: ambari-server
 
 - name: "ROLE[ambari-server] - ACTION[setup] -jdbc-driver"
   shell: 'ambari-server setup --jdbc-db=postgres --jdbc-driver={{ambari_jdbc_postgres_driver_path}} '
