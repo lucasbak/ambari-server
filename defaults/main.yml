@@ -11,3 +11,4 @@ ssl_stores_path: /etc/security/serverKeys
 truststore_password: password
 java_home: /usr/java/default
 services_need_mysql_jdbc: False
+do_sudoers: True

@@ -1,10 +1,16 @@
 [Unit]
   Description=Ambari Server
   After=network.target
-  [Service]
+
+
+[Service]
   Type=forking
-  ExecStartPre=/bin/sleep 30
+  PIDFile=/var/run/ambari-server/ambari-server.pid
+  {% if run_as_non_root_user is defined %}
+User={{ run_as_non_root_user }}
+  {% endif %}
   ExecStart=/usr/sbin/ambari-server start
   ExecStop=/usr/sbin/ambari-server stop
-  [Install]
+
+[Install]
   WantedBy=multi-user.target
