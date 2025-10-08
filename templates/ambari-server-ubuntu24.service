@@ -3,7 +3,6 @@
   After=network.target
 
 [Service]
-  Type=forking
   PIDFile=/var/run/ambari-server/ambari-server.pid
 {% if run_as_non_root_user is defined %}
 User={{ run_as_non_root_user }}

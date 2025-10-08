@@ -7,6 +7,12 @@
   with_fileglob:
     - "{{source_repo_folder}}/*.list"
 
+- name: Import Clemlab Jenkins publishing key
+  apt_key:
+    url: "{{ apt_key }}"
+    state: present
+  when: apt_key is defined
+
 - name: update apt cache
   shell: 'apt update -y'
   when: offline_apt_repos is defined and offline_apt_repos
@@ -56,7 +62,7 @@
     - postgresql
   when: (ansible_distribution == "CentOS" or ansible_distribution == "Rocky" or ansible_distribution == "RedHat") and ansible_distribution_major_version < '8'
 
-- name: "ROLE[ambari-server] - ACTION[setup] - Packages [ubuntu22]"
+- name: "ROLE[ambari-server] - ACTION[setup] - Packages [ubuntu22/ubuntu24]"
   package:
     state: present
     name: "{{item}}"
@@ -187,11 +193,9 @@
     ambari_java_home_options: "--ambari-java-home={{ ambari_java_home }}"
   when: ambari_java_home is defined
 
-
 - set_fact:
     ambari_java_home_options: " "
   when: not ambari_java_home is defined
-
 
 - name: "ROLE[ambari-server] - ACTION[setup] - Lancement de l'installation"
   shell: /usr/sbin/ambari-server setup --silent {{ ambari_java_options | default("") }} {{ ambari_java_home_options  }} {{ ambari_db_options | default("") }}
@@ -234,7 +238,7 @@
   when: ambari_ssl == True
 
 - name: "ROLE[ambari-server] - ACTION[setup] - SSL - TRUSTSTORE"
-  shell: 'ambari-server setup-security --security-option=setup-truststore --truststore-path={{ ssl_stores_path }}/truststore.jks --truststore-type=jks --truststore-password={{ truststore_password }} --truststore-reconfigure'
+  shell: 'ambari-server setup-security --security-option=setup-truststore --truststore-path={{ ssl_stores_path }}/truststore.jks --truststore-type=jks --truststore-password={{ truststore_password }} --truststore-reconfigure --master-key={{ ambari_master_key }} --master-key-persist=true'
   when: ambari_ssl == True
 
 - name: "ROLE[ambari-server] - ACTION[setup] -jdbc-driver"
@@ -246,6 +250,12 @@
     src: ambari-server.service
     dest: /lib/systemd/system/ambari-server.service
   when: ansible_distribution != "Ubuntu"
+
+- name: Copy systemd service for ambari-server [Ubuntu24]
+  template:
+    src: ambari-server-ubuntu24.service
+    dest: /usr/lib/systemd/system/ambari-server.service
+  when: ansible_distribution == "Ubuntu" and ansible_distribution_major_version >= '24'
 
 - name: Systemd reload
   systemd: daemon_reload=yes

@@ -19,7 +19,7 @@ ambari_database_user: ambari_db_user                    ## the name of the datab
 ambari_database_user_password: ambari_db_password       ## the password of the ambari user database
 ambari_ssl: True                                        ## set to True if you want to enable TLS on ambari web console
 ambari_ssl_port: 8442                                   ## ambari server ui port
-mysql_server_hostname: master01.clemlab.com             ## mysql/MariaDB hostname
+mysql_server_hostname: master01.dev01.hadoop.clemlab.com             ## mysql/MariaDB hostname
 mysql_server_port: 3306                                 ## mysql/MariaDB port
 ambari_master_key: masterkey                            ## Ambari's Vault Master Key
 ssl_cert_folder: /etc/ssl/                              ## Folder containing certificates
@@ -32,7 +32,7 @@ Example Playbook
 
 Here is an example playbook that can readily wrap this role and still be fairly flexible.  You typically don't need to be this flexible on password source.
 
-- hosts: master01.clemlab.com
+- hosts: master01.dev01.hadoop.clemlab.com
   gather_facts: no
   vars_files:
   - vars/external_vars_dev.yml
